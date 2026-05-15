@@ -1,0 +1,6 @@
+[submodule "arxiv-latex-cleaner"]
+	path = arxiv-latex-cleaner
+	url = https://github.com/google-research/arxiv-latex-cleaner
+[submodule "FactReview"]
+	path = FactReview
+	url = https://github.com/DEFENSE-SEU/FactReview

@@ -1,0 +1,20 @@
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Submodule-local artifacts that may leak into the parent's working tree
+# (each submodule has its own .gitignore for its internals; this catches
+# anything dropped at the mother-repo root).
+runs/
+out/
