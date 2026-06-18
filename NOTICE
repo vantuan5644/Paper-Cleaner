@@ -1,0 +1,45 @@
+Paper-Cleaner
+=============
+
+This repository is an AGGREGATE of independently licensed components bundled
+together for a single pre-submission workflow (clean a LaTeX source tree for
+arXiv, then verify the bibliography). Each component retains its own upstream
+license; nothing in this bundle relicenses them. See LICENSE for the scope of
+the top-level glue, and each subdirectory's own LICENSE file for the full text.
+
+The two subprojects do not import each other and are executed as separate
+programs, so this is a "mere aggregation" under the GNU AGPL v3.0.
+
+--------------------------------------------------------------------------
+Component               License            Upstream / pinned source
+--------------------------------------------------------------------------
+Top-level glue          MIT                this repository
+  (run.sh, scripts/,                       Copyright (c) 2026 Tuan Tran
+   docs)
+
+arxiv-latex-cleaner/    Apache License     https://github.com/google-research/arxiv-latex-cleaner
+                        2.0                 vendored at commit bcc1460
+                                            (release v1.0.11-2-gbcc1460)
+                        Copyright 2018 The Google Research Authors.
+                        Unmodified from upstream.
+
+FactReview/             GNU AGPL v3.0       https://github.com/DEFENSE-SEU/FactReview
+  (incl. RefCopilot/)                       vendored at commit ac0f9ec
+                        Copyright (C) FactReview authors.
+                        MODIFIED — see FactReview/CHANGES.md (Crossref backend).
+--------------------------------------------------------------------------
+
+AGPL-3.0 NETWORK-USE NOTICE (FactReview / RefCopilot)
+-----------------------------------------------------
+FactReview and its RefCopilot reference checker are licensed under the GNU
+Affero General Public License v3.0. If you run a MODIFIED version of this
+software to interact with users over a network, AGPL section 13 requires you
+to offer those users access to the Corresponding Source of your version. The
+complete source for the version bundled here (including our modifications) is
+this repository.
+
+APACHE-2.0 ATTRIBUTION (arxiv-latex-cleaner)
+--------------------------------------------
+arxiv-latex-cleaner is Copyright 2018 The Google Research Authors and is
+licensed under the Apache License, Version 2.0 (see
+arxiv-latex-cleaner/LICENSE). It is bundled here unmodified.

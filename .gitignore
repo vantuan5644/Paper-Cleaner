@@ -13,8 +13,9 @@ __pycache__/
 venv/
 .env
 
-# Submodule-local artifacts that may leak into the parent's working tree
-# (each submodule has its own .gitignore for its internals; this catches
-# anything dropped at the mother-repo root).
+# Tool run artifacts (each vendored tool also has its own .gitignore; this
+# catches anything dropped at the repo root).
 runs/
 out/
+
+inputs/

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Purpose
 
-`Paper-Cleaner` is a **mother repo** that bundles independent tools used to clean and validate a research paper before submission. It tracks two upstream projects as **git submodules**, each with its own dependencies, license, and CI:
+`Paper-Cleaner` is a **mother repo** that bundles independent tools used to clean and validate a research paper before submission. It **vendors two upstream projects as plain source** (they were previously git submodules; the repo is now self-contained — `git clone` is enough, no `--recurse-submodules`). Each retains its own dependencies, license, and CI:
 
 - `arxiv-latex-cleaner/` — strips a LaTeX source tree to an arXiv-ready ZIP (Google Research, Apache-2.0, Python ≥3.9). Upstream: `https://github.com/google-research/arxiv-latex-cleaner`.
 - `FactReview/` — evidence-grounded paper reviewer; the relevant submodule for this repo is **`FactReview/RefCopilot/`**, a standalone reference-accuracy checker (AGPL-3.0, Python ≥3.11). Upstream: `https://github.com/DEFENSE-SEU/FactReview`.
@@ -18,69 +18,43 @@ When developing here, the two active feature surfaces are:
 
 Other FactReview stages (parse, claim_extract, positioning, execution, report, teaser) exist in this tree because they live in the same upstream repo, but they are **out of scope** for the mother-repo workflow. Touch them only when a change to RefCopilot requires it (see `FactReview/src/fact_generation/refcheck/` for the FactReview ↔ RefCopilot bridge).
 
-## Submodule Layout, Upstream Sync, and Forks
+## Vendored Layout & Upstream Sync
 
-The two subprojects are git submodules. After cloning the mother repo, populate them with:
+The two subprojects live as **plain checked-in directories** — no submodules, no
+`.gitmodules`, no gitlinks. A fresh `git clone` already contains everything.
 
-```bash
-git submodule update --init --recursive
-```
+Each vendored tree is pinned to a specific upstream commit, recorded in `NOTICE`:
 
-### Two-remote convention (`origin` = your fork, `upstream` = public)
-
-We don't have push access to the public repos, so the intended setup inside each submodule is:
-
-| Remote     | Points at                       | Used for          |
-|------------|----------------------------------|-------------------|
-| `origin`   | **your fork** on GitHub          | `git push`        |
-| `upstream` | the canonical public repo        | `git fetch` only  |
-
-The current state (before any fork has been created) has both `origin` and `upstream` aliased to the public URL. The mother repo's `.gitmodules` also records the public URL, so a fresh `git clone --recurse-submodules` Just Works for read-only use. Once you create a fork on GitHub, point `origin` at it (the in-submodule `upstream` remote keeps fetching from public unchanged):
-
-```bash
-# Replace <you> with your GitHub username
-git -C arxiv-latex-cleaner remote set-url origin git@github.com:<you>/arxiv-latex-cleaner.git
-git -C FactReview         remote set-url origin git@github.com:<you>/FactReview.git
-
-# Also record the fork URL in .gitmodules so future clones of the mother repo
-# pull from your fork by default:
-git submodule set-url arxiv-latex-cleaner git@github.com:<you>/arxiv-latex-cleaner.git
-git submodule set-url FactReview          git@github.com:<you>/FactReview.git
-git add .gitmodules && git commit -m "chore: point submodule origins at forks"
-```
+| Subtree | Upstream | Pinned | Local mods |
+|---------|----------|--------|-----------|
+| `arxiv-latex-cleaner/` | `github.com/google-research/arxiv-latex-cleaner` | `bcc1460` (v1.0.11-2) | none |
+| `FactReview/` | `github.com/DEFENSE-SEU/FactReview` | `ac0f9ec` | Crossref backend — see `FactReview/CHANGES.md` |
 
 ### Pulling updates from upstream
 
-```bash
-scripts/sync-upstream.sh          # fetch upstream for each submodule; show new commits
-scripts/sync-upstream.sh --ff     # also fast-forward each submodule to upstream's default branch
-```
-
-After `--ff`, commit the bumped submodule pointers from the mother repo so collaborators get the new revisions:
+Re-vendor a subtree from a newer upstream commit (this overwrites the subtree to
+match upstream; see the script header for the caveats):
 
 ```bash
-git add arxiv-latex-cleaner FactReview
-git commit -m "chore: bump submodules to upstream HEAD"
+scripts/revendor.sh arxiv-latex-cleaner            # default branch HEAD
+scripts/revendor.sh FactReview <commit-ish>        # a specific commit
 ```
 
-If `--ff` refuses to fast-forward (because you have local commits on a submodule), open the submodule, decide between `git merge upstream/main` and `git rebase upstream/main`, then push to **your fork's `origin`** before bumping the pointer.
-
-### Working on changes inside a submodule
-
-Submodule HEADs are detached by default after `git submodule update`. Before making changes:
+After re-vendoring: update the pinned commit in `NOTICE` (and `README.md`), and
+if you re-vendored **FactReview**, re-apply local modifications and update
+`FactReview/CHANGES.md` (AGPL §5a requires dated change notices). Then:
 
 ```bash
-cd FactReview                 # or arxiv-latex-cleaner
-git checkout -b feature/my-change   # branch off the pinned commit
-# ...edit, commit, then:
-git push -u origin feature/my-change # pushes to your fork (once origin is your fork)
+git add arxiv-latex-cleaner FactReview NOTICE
+git commit -m "chore: re-vendor <tool> to upstream <sha>"
 ```
 
-Then from the mother repo, bump the pointer:
+### Working on changes inside a vendored subtree
 
-```bash
-git add FactReview && git commit -m "chore: bump FactReview to feature/my-change"
-```
+Just edit the files in place and commit them in this repo — there is no separate
+submodule to enter or push. **If you modify `FactReview/` (AGPL-3.0), add a dated
+entry to `FactReview/CHANGES.md`** describing what changed (AGPL §5a). Changes to
+`arxiv-latex-cleaner/` (Apache-2.0) should note modifications too, per Apache §4.
 
 ## Common Commands
 
@@ -159,8 +133,9 @@ When FactReview's full pipeline runs with `--enable-refcheck`, `FactReview/src/f
 
 ## Conventions
 
-- **Do not** merge the two subprojects into one package or move them out of submodules. They have incompatible licenses (Apache-2.0 vs AGPL-3.0) and independent upstreams; cross-imports would taint either side.
-- **Do not** add a top-level `pyproject.toml` / `setup.py` / `requirements.txt`. Each submodule owns its own.
-- When adding pre-submission tooling, decide first whether it belongs in `arxiv-latex-cleaner` (LaTeX-source transforms) or in RefCopilot (citation verification). If it fits neither, propose a new sibling submodule (or a top-level `tools/` directory for thin glue) rather than wedging it into an existing one.
-- Any change to a submodule's code must be committed **inside that submodule first** and pushed to your fork's `origin`. The mother repo only tracks the submodule SHA — committing changes to submodule files from the parent without entering the submodule will fail.
-- Python versions differ: 3.9+ for `arxiv-latex-cleaner`, 3.11+ for FactReview/RefCopilot. Use separate virtualenvs.
+- **Do not** merge the two subprojects into one package. They have incompatible licenses (Apache-2.0 vs AGPL-3.0) and independent upstreams. The repo is a **"mere aggregation"**: the two tools must stay independent programs — **never add a cross-import between `arxiv-latex-cleaner/` and `FactReview/`**, or you pull the Apache-2.0 code under AGPL-3.0.
+- **Do not** relicense the vendored subtrees or strip their `LICENSE`/copyright headers. The top-level glue (`run.sh`, `scripts/`, docs) is MIT; the subtrees keep their upstream licenses. See `LICENSE` and `NOTICE`.
+- **Do not** add a top-level `pyproject.toml` / `setup.py` / `requirements.txt`. Each vendored tree owns its own.
+- When adding pre-submission tooling, decide first whether it belongs in `arxiv-latex-cleaner` (LaTeX-source transforms) or in RefCopilot (citation verification). If it fits neither, add thin glue under `scripts/` (MIT) rather than wedging it into a vendored subtree.
+- Modifications to `FactReview/` (AGPL-3.0) must be recorded in `FactReview/CHANGES.md` with a date (AGPL §5a). Modifications to `arxiv-latex-cleaner/` (Apache-2.0) should be noted per Apache §4.
+- Python versions differ: 3.9+ for `arxiv-latex-cleaner`, 3.11+ for FactReview/RefCopilot. `run.sh` installs both into one shared `.venv`.
