@@ -7,6 +7,10 @@
 #   2. RefCopilot            — verify every citation against arXiv / S2 /
 #                              OpenReview (and OpenAlex if configured)
 #
+# The paper source can be a LaTeX directory (both steps run) or a single .pdf
+# file (step 1 is skipped — there is no source tree to clean, so it goes
+# straight to the reference check).
+#
 # Defaults are tuned so Enter-Enter-Enter does the right thing for
 # inputs/. Anywhere you see [bracketed default], press Enter to accept.
 
@@ -72,39 +76,52 @@ fi
 
 echo
 
-# ── 2. interactive: pick the paper source directory ─────────────────────────
-read -r -p "Path to paper source dir [$DEFAULT_INPUT]: " INPUT
+# ── 2. interactive: pick the paper source ───────────────────────────────────
+# Accepts either a LaTeX source directory (clean + refcheck) or a single .pdf
+# file (refcheck only — there is no LaTeX tree to clean).
+read -r -p "Path to paper source dir or .pdf [$DEFAULT_INPUT]: " INPUT
 INPUT="${INPUT:-$DEFAULT_INPUT}"
 
-if [[ ! -d "$INPUT" ]]; then
-  echo "ERROR: not a directory: $INPUT" >&2
+if [[ -d "$INPUT" ]]; then
+  MODE="dir"
+  INPUT="$(cd "$INPUT" && pwd)"                          # normalize to absolute
+  INPUT_NAME="$(basename "$INPUT")"
+  INPUT_PARENT="$(dirname "$INPUT")"
+elif [[ -f "$INPUT" && "${INPUT,,}" == *.pdf ]]; then
+  MODE="pdf"
+  INPUT="$(cd "$(dirname "$INPUT")" && pwd)/$(basename "$INPUT")"   # absolute
+  INPUT_PARENT="$(dirname "$INPUT")"
+  INPUT_NAME="$(basename "$INPUT")"; INPUT_NAME="${INPUT_NAME%.[Pp][Dd][Ff]}"  # strip ext for naming
+else
+  echo "ERROR: not a directory or .pdf file: $INPUT" >&2
   exit 1
 fi
-INPUT="$(cd "$INPUT" && pwd)"          # normalize to absolute
-INPUT_NAME="$(basename "$INPUT")"
-INPUT_PARENT="$(dirname "$INPUT")"
-echo "    using: $INPUT"
+echo "    using: $INPUT  (mode: $MODE)"
 echo
 
-# ── 3. LaTeX cleaning ────────────────────────────────────────────────────────
-read -r -p "Run arxiv-latex-cleaner on this directory? [Y/n]: " ANS
-if [[ ! "${ANS:-y}" =~ ^[Nn]$ ]]; then
-  CLEANED="${INPUT_PARENT}/${INPUT_NAME}_arXiv"
-  if [[ -d "$CLEANED" ]]; then
-    read -r -p "    $CLEANED exists. Overwrite? [y/N]: " OVR
-    if [[ "${OVR:-n}" =~ ^[Yy]$ ]]; then
-      rm -rf "$CLEANED"
-    else
-      echo "    keeping existing $CLEANED, skipping cleaner."
-      CLEANED=""
+# ── 3. LaTeX cleaning (directory input only) ─────────────────────────────────
+if [[ "$MODE" == "pdf" ]]; then
+  echo ">>> PDF input — skipping LaTeX cleaning (no source tree to clean)."
+else
+  read -r -p "Run arxiv-latex-cleaner on this directory? [Y/n]: " ANS
+  if [[ ! "${ANS:-y}" =~ ^[Nn]$ ]]; then
+    CLEANED="${INPUT_PARENT}/${INPUT_NAME}_arXiv"
+    if [[ -d "$CLEANED" ]]; then
+      read -r -p "    $CLEANED exists. Overwrite? [y/N]: " OVR
+      if [[ "${OVR:-n}" =~ ^[Yy]$ ]]; then
+        rm -rf "$CLEANED"
+      else
+        echo "    keeping existing $CLEANED, skipping cleaner."
+        CLEANED=""
+      fi
     fi
-  fi
-  if [[ -n "$CLEANED" ]]; then
-    echo ">>> Cleaning LaTeX → $CLEANED"
-    # --keep_bib so the cleaned tree still contains the bibliography the user
-    # can pass to RefCopilot if they prefer the cleaned bib over the original.
-    arxiv_latex_cleaner "$INPUT" --keep_bib --verbose
-    echo ">>> Cleaned tree: $CLEANED"
+    if [[ -n "$CLEANED" ]]; then
+      echo ">>> Cleaning LaTeX → $CLEANED"
+      # --keep_bib so the cleaned tree still contains the bibliography the user
+      # can pass to RefCopilot if they prefer the cleaned bib over the original.
+      arxiv_latex_cleaner "$INPUT" --keep_bib --verbose
+      echo ">>> Cleaned tree: $CLEANED"
+    fi
   fi
 fi
 echo
@@ -116,31 +133,38 @@ if [[ "${ANS:-y}" =~ ^[Nn]$ ]]; then
   exit 0
 fi
 
-# Discover candidate inputs: .bib files first (cheapest path), then a .pdf.
-mapfile -t BIBS < <(find "$INPUT" -maxdepth 2 -name "*.bib" -type f | sort)
-mapfile -t PDFS < <(find "$INPUT" -maxdepth 2 -name "*.pdf" -type f | sort)
-
-CANDIDATES=("${BIBS[@]}" "${PDFS[@]}")
 REFINPUT=""
-
-if (( ${#CANDIDATES[@]} == 0 )); then
-  read -r -p "    no .bib/.pdf found. Path to .bib / .pdf / arXiv URL: " REFINPUT
-elif (( ${#CANDIDATES[@]} == 1 )); then
-  REFINPUT="${CANDIDATES[0]}"
-  echo "    auto-selected: $REFINPUT"
+if [[ "$MODE" == "pdf" ]]; then
+  # The top-level input is itself the PDF to check — RefCopilot extracts the
+  # bibliography from it directly.
+  REFINPUT="$INPUT"
+  echo "    using PDF: $REFINPUT"
 else
-  echo "    bibliography / paper candidates:"
-  for i in "${!CANDIDATES[@]}"; do
-    SIZE=$(stat -c%s "${CANDIDATES[i]}" 2>/dev/null || stat -f%z "${CANDIDATES[i]}")
-    printf "      %d) %s  (%s bytes)\n" "$((i+1))" "${CANDIDATES[i]}" "$SIZE"
-  done
-  read -r -p "    pick [1]: " PICK
-  PICK="${PICK:-1}"
-  if ! [[ "$PICK" =~ ^[0-9]+$ ]] || (( PICK < 1 || PICK > ${#CANDIDATES[@]} )); then
-    echo "ERROR: invalid choice: $PICK" >&2
-    exit 1
+  # Discover candidate inputs: .bib files first (cheapest path), then a .pdf.
+  mapfile -t BIBS < <(find "$INPUT" -maxdepth 2 -name "*.bib" -type f | sort)
+  mapfile -t PDFS < <(find "$INPUT" -maxdepth 2 -name "*.pdf" -type f | sort)
+
+  CANDIDATES=("${BIBS[@]}" "${PDFS[@]}")
+
+  if (( ${#CANDIDATES[@]} == 0 )); then
+    read -r -p "    no .bib/.pdf found. Path to .bib / .pdf / arXiv URL: " REFINPUT
+  elif (( ${#CANDIDATES[@]} == 1 )); then
+    REFINPUT="${CANDIDATES[0]}"
+    echo "    auto-selected: $REFINPUT"
+  else
+    echo "    bibliography / paper candidates:"
+    for i in "${!CANDIDATES[@]}"; do
+      SIZE=$(stat -c%s "${CANDIDATES[i]}" 2>/dev/null || stat -f%z "${CANDIDATES[i]}")
+      printf "      %d) %s  (%s bytes)\n" "$((i+1))" "${CANDIDATES[i]}" "$SIZE"
+    done
+    read -r -p "    pick [1]: " PICK
+    PICK="${PICK:-1}"
+    if ! [[ "$PICK" =~ ^[0-9]+$ ]] || (( PICK < 1 || PICK > ${#CANDIDATES[@]} )); then
+      echo "ERROR: invalid choice: $PICK" >&2
+      exit 1
+    fi
+    REFINPUT="${CANDIDATES[$((PICK-1))]}"
   fi
-  REFINPUT="${CANDIDATES[$((PICK-1))]}"
 fi
 
 OUTDIR="${INPUT_PARENT}/${INPUT_NAME}_refcheck"
@@ -151,5 +175,7 @@ refcopilot check "$REFINPUT" --output-dir "$OUTDIR"
 
 echo
 echo ">>> Done."
-echo "    cleaned LaTeX  : ${INPUT_PARENT}/${INPUT_NAME}_arXiv (if cleaner ran)"
+if [[ "$MODE" == "dir" ]]; then
+  echo "    cleaned LaTeX  : ${INPUT_PARENT}/${INPUT_NAME}_arXiv (if cleaner ran)"
+fi
 echo "    refcheck report: $OUTDIR"
