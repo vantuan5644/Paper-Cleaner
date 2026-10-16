@@ -37,6 +37,25 @@ Modified files:
 - `RefCopilot/tests/test_retrieval.py`, `RefCopilot/tests/test_verify.py` — test coverage.
 - `RefCopilot/README.md`, `.env.example` — documentation / config for the new backend.
 
+### 2026-10-16 — Refresh expired Codex tokens; update default Codex model
+
+Expired Codex access tokens made every LLM call fail with HTTP 401
+`token_expired` (surfacing in RefCopilot as "LLM returned unusable payload:
+status=error"), because the cached token was read but never refreshed.
+
+Modified files:
+
+- `src/llm/codex_auth.py` — when the cached access token's JWT has expired,
+  refresh it with the stored refresh token (same endpoint and client id as the
+  Codex CLI) and write the rotated tokens back to the same auth file, keeping
+  its layout. Refreshes are serialised so parallel callers don't reuse a
+  rotated refresh token.
+- `src/llm/codex_client.py` — default Codex model `gpt-5.5` → `gpt-6.1-sol`;
+  the backend rejects `gpt-5.5` for ChatGPT-account logins.
+- `RefCopilot/src/refcopilot/extract/llm_extractor.py` — include the underlying
+  error in the "unusable payload" warning.
+- `tests/test_codex_auth.py` — new tests for the refresh path.
+
 ### 2026-10-16 — Stop Crossref fuzzy matches from leaking into suggested BibTeX
 
 Crossref's title search always returns its best guesses. Only a title-overlap

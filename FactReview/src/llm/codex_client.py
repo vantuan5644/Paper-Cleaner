@@ -10,7 +10,9 @@ from .codex_auth import CodexAuth
 from .provider_capabilities import is_codex_provider as _is_codex_provider
 
 _DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
-_DEFAULT_MODEL = "gpt-5.5"
+# gpt-5.5 and gpt-6 are rejected for ChatGPT-account Codex logins ("model is
+# not supported when using Codex with a ChatGPT account").
+_DEFAULT_MODEL = "gpt-6.1-sol"
 _DEFAULT_INSTRUCTIONS = Path(__file__).resolve().parent / "providers" / "codex_instructions.txt"
 
 

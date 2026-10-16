@@ -155,8 +155,12 @@ def _extract_chunk(chunk: str) -> list[dict[str, Any]]:
         system=SYSTEM_PROMPT,
     )
 
-    if not isinstance(payload, dict) or payload.get("status") in ("error", "unknown"):
-        logger.warning("LLM returned unusable payload: status=%s", payload.get("status"))
+    if not isinstance(payload, dict):
+        logger.warning("LLM returned unusable payload: %r", payload)
+        return []
+    if payload.get("status") in ("error", "unknown"):
+        detail = payload.get("error") or str(payload.get("raw") or "")[:200]
+        logger.warning("LLM returned unusable payload: status=%s: %s", payload.get("status"), detail)
         return []
 
     refs = payload.get("references")
