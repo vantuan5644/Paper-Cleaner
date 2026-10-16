@@ -37,5 +37,31 @@ Modified files:
 - `RefCopilot/tests/test_retrieval.py`, `RefCopilot/tests/test_verify.py` — test coverage.
 - `RefCopilot/README.md`, `.env.example` — documentation / config for the new backend.
 
+### 2026-10-16 — Stop Crossref fuzzy matches from leaking into suggested BibTeX
+
+Crossref's title search always returns its best guesses. Only a title-overlap
+floor of 0.40 stood between those guesses and the merger, so unrelated works
+(supplementary files, theses, Research Square / OSF preprints, a different
+paper by the same first author) passed through. Their DOI, venue, and sometimes
+title/authors then appeared in the suggested BibTeX.
+
+Modified files:
+
+- `RefCopilot/src/refcopilot/search/crossref.py` — a title-search candidate
+  must now match the citation on title *and* authors (see the `CROSSREF_*`
+  thresholds); survivors are ranked by match quality so the merger, which keeps
+  the first Crossref record, gets the best one. `component` / `peer-review` /
+  `grant` records are dropped.
+- `RefCopilot/src/refcopilot/verify/thresholds.py` — new `CROSSREF_*` thresholds.
+- `RefCopilot/src/refcopilot/merge.py` — prefer a publisher DOI over an arXiv
+  DOI (`10.48550/arxiv.*`), and drop an arXiv DOI when the arXiv ID is known.
+- `RefCopilot/src/refcopilot/verify/text_match.py` — new `is_arxiv_venue()`
+  that also recognises `CoRR 2026` / `arXiv preprint arXiv:…`.
+- `RefCopilot/src/refcopilot/verify/outdated.py`,
+  `RefCopilot/src/refcopilot/bibtex_suggest.py` — use `is_arxiv_venue()`, so a
+  "CoRR" venue no longer triggers an `arxiv_published` upgrade.
+- `RefCopilot/tests/test_retrieval.py`, `RefCopilot/tests/test_verify.py` —
+  regression tests from the mismatches seen in real reports.
+
 These modifications remain licensed under AGPL-3.0. The complete corresponding
 source is this repository.

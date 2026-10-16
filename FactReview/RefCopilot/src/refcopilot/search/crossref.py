@@ -36,8 +36,13 @@ from refcopilot.cache.disk_cache import DiskCache
 from refcopilot.models import Backend, ExternalRecord, Reference
 from refcopilot.ratelimit.crossref import CrossrefRateLimiter
 from refcopilot.ratelimit.semantic_scholar import parse_retry_after
-from refcopilot.verify.text_match import title_similarity
-from refcopilot.verify.thresholds import SEARCH_RESULT_MIN_TITLE_SIM
+from refcopilot.verify.text_match import author_overlap, title_similarity
+from refcopilot.verify.thresholds import (
+    CROSSREF_TITLE_ONLY_MIN_SIM,
+    CROSSREF_WEAK_TITLE_MIN_AUTHOR_OVERLAP,
+    CROSSREF_WEAK_TITLE_MIN_SIM,
+    TITLE_SIMILARITY_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +56,11 @@ _SELECT_FIELDS = (
     "DOI,title,author,issued,published,published-print,published-online,"
     "container-title,short-container-title,type,URL"
 )
+
+# Crossref work types that are never the cited work itself: supplementary files
+# and figures/tables (``component``, e.g. ``10.1021/acs.jcim.5c02400.s001``),
+# referee reports, and funding records.
+_NON_CITABLE_TYPES = frozenset({"component", "peer-review", "grant"})
 
 
 class _Response(Protocol):
@@ -98,7 +108,9 @@ class CrossrefBackend:
             if rec:
                 return [rec]
         if ref.title:
-            return self.search_by_title(ref.title, year=ref.year, max_results=5)
+            return self.search_by_title(
+                ref.title, year=ref.year, authors=ref.authors, max_results=5
+            )
         return []
 
     def lookup_by_doi(self, doi: str) -> ExternalRecord | None:
@@ -118,8 +130,19 @@ class CrossrefBackend:
         return _work_to_record(message) if isinstance(message, dict) else None
 
     def search_by_title(
-        self, title: str, *, year: int | None = None, max_results: int = 5
+        self,
+        title: str,
+        *,
+        year: int | None = None,
+        authors: list[str] | None = None,
+        max_results: int = 5,
     ) -> list[ExternalRecord]:
+        """Return candidates that match the citation, best match first.
+
+        The merger keeps only the first Crossref record, so ordering matters:
+        Crossref's own relevance rank can put a topical neighbour above the
+        cited work (e.g. a bioRxiv paper above the CVPR LDM paper).
+        """
         clean = re.sub(r"\s+", " ", title.strip())
         cache_key = f"title_{clean[:80]}_{year or ''}"
         # ``query.bibliographic`` is Crossref's reference-matching field; it is
@@ -140,22 +163,25 @@ class CrossrefBackend:
         items = message.get("items") if isinstance(message, dict) else None
         if not isinstance(items, list):
             return []
-        records: list[ExternalRecord] = []
+        scored: list[tuple[float, float, ExternalRecord]] = []
         for work in items[:max_results]:
             rec = _work_to_record(work)
-            if rec is None:
+            if rec is None or rec.raw.get("type") in _NON_CITABLE_TYPES:
                 continue
             # Crossref ranks by relevance, not year; drop candidates whose year
             # is wildly off (allow ±1 for venues spanning calendar years,
             # mirroring OpenAlex / OpenReview).
             if year and rec.year and rec.year not in {year, year - 1, year + 1}:
                 continue
-            # Require a minimum title-token overlap so topical neighbours that
-            # share a few keywords don't masquerade as the cited paper.
-            if title_similarity(clean, rec.title) < SEARCH_RESULT_MIN_TITLE_SIM:
+            title_sim = title_similarity(clean, rec.title)
+            author_sim = author_overlap(authors or [], rec.authors)
+            if not _matches_citation(
+                title_sim, author_sim, has_authors=bool(authors and rec.authors)
+            ):
                 continue
-            records.append(rec)
-        return records
+            scored.append((title_sim, author_sim, rec))
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [rec for _, _, rec in scored]
 
     def _cached_or_fetch(
         self, cache_key: str, path: str, params: dict[str, str]
@@ -245,6 +271,21 @@ class CrossrefBackend:
         # Treat as transient: don't poison the backend.
         self._last_was_transient = True
         return None
+
+
+def _matches_citation(title_sim: float, author_sim: float, *, has_authors: bool) -> bool:
+    """Accept a Crossref candidate only when title AND authors agree.
+
+    See ``CROSSREF_*`` in ``verify/thresholds.py`` for the tuning cases.
+    """
+    if not has_authors:
+        return title_sim >= CROSSREF_TITLE_ONLY_MIN_SIM
+    if title_sim >= TITLE_SIMILARITY_THRESHOLD:
+        return author_sim > 0
+    return (
+        title_sim >= CROSSREF_WEAK_TITLE_MIN_SIM
+        and author_sim >= CROSSREF_WEAK_TITLE_MIN_AUTHOR_OVERLAP
+    )
 
 
 _DOI_URL_PREFIXES = ("https://doi.org/", "http://doi.org/", "doi:")

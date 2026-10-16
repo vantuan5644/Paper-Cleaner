@@ -8,6 +8,7 @@ import unicodedata
 from rapidfuzz.fuzz import ratio
 
 from refcopilot.verify.thresholds import (
+    ARXIV_VENUE_ALIASES,
     LOWERCASE_HEAD_STOPWORDS,
     MAX_AUTHORS_TO_COMPARE,
 )
@@ -84,6 +85,26 @@ def _normalize_for_match(text: str) -> str:
     s = re.sub(r"[^\w\s]+", " ", s, flags=re.UNICODE)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+# ---------------------------------------------------------------------------
+# Venue
+# ---------------------------------------------------------------------------
+
+
+_ARXIV_VENUE_PREFIX = re.compile(r"(arxiv|corr)\b")
+
+
+def is_arxiv_venue(venue: str | None) -> bool:
+    """True for venue strings that just name arXiv rather than a publication.
+
+    Covers the bare aliases plus the decorated forms backends and PDFs emit:
+    ``CoRR 2026``, ``CoRR abs/2301.00001``, ``arXiv preprint arXiv:2605.11739``.
+    """
+    v = (venue or "").strip().lower()
+    if not v:
+        return False
+    return v in ARXIV_VENUE_ALIASES or _ARXIV_VENUE_PREFIX.match(v) is not None
 
 
 # ---------------------------------------------------------------------------

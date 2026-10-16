@@ -19,7 +19,7 @@ from refcopilot.models import (
     Reference,
     Severity,
 )
-from refcopilot.verify.thresholds import ARXIV_VENUE_ALIASES
+from refcopilot.verify.text_match import is_arxiv_venue
 
 
 def detect(reference: Reference, merged: MergedRecord | None) -> list[Issue]:
@@ -78,15 +78,14 @@ def detect(reference: Reference, merged: MergedRecord | None) -> list[Issue]:
 def _cited_as_arxiv(reference: Reference) -> bool:
     if reference.arxiv_id and not reference.doi:
         return True
-    venue = (reference.venue or "").strip().lower()
-    return venue in ARXIV_VENUE_ALIASES
+    return is_arxiv_venue(reference.venue)
 
 
 def _has_real_venue(merged: MergedRecord) -> bool:
-    venue = (merged.venue or "").strip().lower()
+    venue = (merged.venue or "").strip()
     if not venue:
         return False
-    return venue not in ARXIV_VENUE_ALIASES
+    return not is_arxiv_venue(venue)
 
 
 def _cited_workshop(reference: Reference) -> bool:

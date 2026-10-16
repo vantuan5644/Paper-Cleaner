@@ -6,6 +6,9 @@ considered more authoritative for that field:
   - title / authors / year       → arXiv > S2 > Crossref > OpenAlex > OpenReview.
   - venue / publication_venue    → Crossref > S2 > OpenAlex > arXiv > OpenReview.
   - DOI                          → Crossref > S2 > OpenAlex > arXiv (OpenReview rarely has it).
+                                   A publisher DOI beats an arXiv DOI (``10.48550/arxiv.*``)
+                                   from any backend; an arXiv DOI is dropped when the arXiv
+                                   ID is known, since it only aliases the eprint.
   - arxiv_id / arxiv_versions / latest_arxiv_version → arXiv > S2.
   - is_retracted                 → OR across all backends (any positive wins).
   - URL                          → arXiv > S2 > OpenAlex > Crossref > OpenReview.
@@ -84,9 +87,13 @@ def merge_records(records: list[ExternalRecord]) -> MergedRecord | None:
     if venue:
         provenance["venue"] = prov_venue  # type: ignore[assignment]
 
-    doi, prov_doi = _pick(by_backend, _DOI_PRIORITY, lambda r: r.doi)
-    if doi:
-        provenance["doi"] = prov_doi  # type: ignore[assignment]
+    doi, prov_doi = _pick(
+        by_backend,
+        _DOI_PRIORITY,
+        lambda r: None if _is_arxiv_doi(r.doi) else r.doi,
+    )
+    if not doi:
+        doi, prov_doi = _pick(by_backend, _DOI_PRIORITY, lambda r: r.doi)
 
     arxiv_rec = by_backend.get(Backend.ARXIV)
     arxiv_id: str | None = None
@@ -104,6 +111,11 @@ def merge_records(records: list[ExternalRecord]) -> MergedRecord | None:
         if s2_rec and s2_rec.arxiv_id:
             arxiv_id = s2_rec.arxiv_id
             provenance["arxiv_id"] = Backend.SEMANTIC_SCHOLAR
+
+    if doi and _is_arxiv_doi(doi) and arxiv_id:
+        doi = None
+    if doi:
+        provenance["doi"] = prov_doi  # type: ignore[assignment]
 
     # Retraction is a positive signal — any backend that flags the work as
     # retracted (arXiv "withdrawn" string, OpenAlex is_retracted, future
@@ -127,6 +139,10 @@ def merge_records(records: list[ExternalRecord]) -> MergedRecord | None:
         provenance=provenance,
         sources=list(records),
     )
+
+
+def _is_arxiv_doi(doi: str | None) -> bool:
+    return doi is not None and doi.strip().lower().startswith("10.48550/arxiv.")
 
 
 def _pick(

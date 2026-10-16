@@ -166,6 +166,36 @@ def test_outdated_arxiv_reference_emits_published_warning(tmp_path) -> None:
     assert "arxiv_published" in codes
 
 
+def test_corr_venue_is_not_a_published_upgrade(tmp_path) -> None:
+    # OpenReview / DBLP label arXiv preprints "CoRR <year>"; that is arXiv,
+    # so there is nothing to upgrade to.
+    bib = """
+    @misc{vas,
+      author = {A. Vaswani},
+      title  = {Attention Is All You Need},
+      year   = {2017},
+      eprint = {1706.03762},
+      archivePrefix = {arXiv},
+    }
+    """
+    arxiv = {"1706.03762": [_attention_arxiv()]}
+    openreview = {
+        "1706.03762": [
+            _attention_s2(
+                backend=Backend.OPENREVIEW,
+                venue="CoRR 2017",
+                publication_venue="CoRR 2017",
+                doi=None,
+            )
+        ]
+    }
+    pipeline = _build_pipeline(tmp_path, arxiv=arxiv, openreview=openreview)
+
+    report = pipeline.run(bib, input_type=SourceFormat.BIBTEX)
+    codes = {i.code for i in report.checked[0].issues}
+    assert "arxiv_published" not in codes
+
+
 def test_incomplete_reference_missing_doi_is_warning(tmp_path) -> None:
     bib = """
     @inproceedings{vas,

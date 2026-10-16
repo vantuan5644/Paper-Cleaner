@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from refcopilot.models import Backend, MergedRecord, Reference, SourceFormat
-from refcopilot.verify.thresholds import ARXIV_VENUE_ALIASES
+from refcopilot.verify.text_match import is_arxiv_venue
 
 _INPROCEEDINGS_HINTS = ("conference", "proceedings", "workshop", "symposium", "meeting")
 
@@ -84,7 +84,7 @@ def _entry_type(reference: Reference, merged: MergedRecord) -> str:
             return m.group(1).lower()
 
     venue = (merged.venue or "").strip().lower()
-    if not venue or venue in ARXIV_VENUE_ALIASES:
+    if not venue or is_arxiv_venue(venue):
         return "misc" if merged.arxiv_id else "article"
     if any(hint in venue for hint in _INPROCEEDINGS_HINTS):
         return "inproceedings"

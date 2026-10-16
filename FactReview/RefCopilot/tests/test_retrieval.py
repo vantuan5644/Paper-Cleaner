@@ -230,3 +230,122 @@ def test_merge_prefers_crossref_for_doi_and_venue() -> None:
     assert merged.provenance["doi"] is Backend.CROSSREF
     assert merged.venue == "Advances in Neural Information Processing Systems"
     assert merged.provenance["venue"] is Backend.CROSSREF
+
+
+def _crossref_search(tmp_path, items: list[dict], **ref_fields) -> list[ExternalRecord]:
+    def fake_get(url, params, headers):
+        return _FakeResp(200, {"message": {"items": items}})
+
+    backend = CrossrefBackend(http_get=fake_get, cache=DiskCache(tmp_path))
+    return backend.lookup(Reference(raw="x", source_format=SourceFormat.PDF, **ref_fields))
+
+
+def test_crossref_rejects_contained_title_with_no_shared_authors(tmp_path) -> None:
+    # The cited title is fully contained in this unrelated WWW'20 title (title
+    # sim 0.85), so only the author check keeps Jia et al.'s DOI out of
+    # Cohen et al.'s suggested BibTeX.
+    recs = _crossref_search(
+        tmp_path,
+        [
+            {
+                "DOI": "10.1145/3366423.3380029",
+                "title": [
+                    "Certified Robustness of Community Detection against Adversarial "
+                    "Structural Perturbation via Randomized Smoothing"
+                ],
+                "author": [{"given": "Jinyuan", "family": "Jia"}],
+                "issued": {"date-parts": [[2020]]},
+                "type": "proceedings-article",
+            }
+        ],
+        title="Certified adversarial robustness via randomized smoothing",
+        authors=["J. M. Cohen", "E. Rosenfeld", "J. Z. Kolter"],
+        year=2019,
+    )
+    assert recs == []
+
+
+def test_crossref_ranks_true_match_above_topical_neighbour(tmp_path) -> None:
+    # Crossref ranked the bioRxiv brain-activity paper first; the merger keeps
+    # only the first Crossref record, so the CVPR paper must be moved ahead
+    # (and the neighbour, sharing no authors, dropped).
+    recs = _crossref_search(
+        tmp_path,
+        [
+            {
+                "DOI": "10.1101/2022.11.18.517004",
+                "title": [
+                    "High-resolution image reconstruction with latent diffusion "
+                    "models from human brain activity"
+                ],
+                "author": [{"given": "Yu", "family": "Takagi"}],
+                "issued": {"date-parts": [[2022]]},
+                "type": "posted-content",
+            },
+            {
+                "DOI": "10.1109/cvpr52688.2022.01042",
+                "title": ["High-Resolution Image Synthesis with Latent Diffusion Models"],
+                "author": [{"given": "Robin", "family": "Rombach"}],
+                "issued": {"date-parts": [[2022]]},
+                "type": "proceedings-article",
+            },
+        ],
+        title="High-resolution image synthesis with latent diffusion models",
+        authors=["R. Rombach", "A. Blattmann", "et al."],
+        year=2022,
+    )
+    assert [r.doi for r in recs] == ["10.1109/cvpr52688.2022.01042"]
+
+
+def test_crossref_keeps_renamed_title_with_author_overlap(tmp_path) -> None:
+    # Camera-ready retitles are legitimate when the authors agree.
+    recs = _crossref_search(
+        tmp_path,
+        [
+            {
+                "DOI": "10.52202/075280-2529",
+                "title": ["Tree-Rings Watermarks: Invisible Fingerprints for Diffusion Images"],
+                "author": [
+                    {"given": "Yuxin", "family": "Wen"},
+                    {"given": "John", "family": "Kirchenbauer"},
+                    {"given": "Jonas", "family": "Geiping"},
+                    {"given": "Tom", "family": "Goldstein"},
+                ],
+                "issued": {"date-parts": [[2023]]},
+                "type": "proceedings-article",
+            }
+        ],
+        title=("Tree-ring watermarks: Fingerprints for diffusion images that are invisible and robust"),
+        authors=["Y. Wen", "J. Kirchenbauer", "J. Geiping", "T. Goldstein"],
+        year=2023,
+    )
+    assert [r.doi for r in recs] == ["10.52202/075280-2529"]
+
+
+def test_crossref_drops_supplementary_components(tmp_path) -> None:
+    work = dict(_CROSSREF_WORK, DOI="10.1021/x.s001", type="component")
+    recs = _crossref_search(tmp_path, [work], title="Attention Is All You Need", authors=["A. Vaswani"])
+    assert recs == []
+
+
+def test_merge_prefers_publisher_doi_over_arxiv_doi() -> None:
+    s2 = _s2(doi="10.48550/arxiv.1706.03762")
+    crossref = ExternalRecord(
+        backend=Backend.CROSSREF,
+        record_id="10.5555/abc",
+        title="Attention Is All You Need",
+        doi="10.5555/abc",
+    )
+    merged = merge_records([_arxiv(), s2, crossref])
+    assert merged is not None
+    assert merged.doi == "10.5555/abc"
+
+
+def test_merge_drops_arxiv_doi_when_eprint_known() -> None:
+    # 10.48550/arxiv.* only aliases the eprint; suggesting it next to
+    # ``eprint = {...}`` is noise.
+    merged = merge_records([_arxiv(), _s2(doi="10.48550/arxiv.1706.03762")])
+    assert merged is not None
+    assert merged.arxiv_id == "1706.03762"
+    assert merged.doi is None
+    assert "doi" not in merged.provenance

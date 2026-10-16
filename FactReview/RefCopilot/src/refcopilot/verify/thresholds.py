@@ -24,6 +24,22 @@ TITLE_MISMATCH_MIN_SIM = 0.50
 # that shares one topic word, ≤ 0.36).
 SEARCH_RESULT_MIN_TITLE_SIM = 0.40
 
+# Crossref's ``query.bibliographic`` always returns its best guesses, so the
+# top hit for a paper Crossref doesn't hold is routinely an unrelated work that
+# shares the topic words (a supplementary file, a thesis, a Research Square
+# preprint). Its DOI and venue then land in the suggested BibTeX. Title overlap
+# alone can't separate these: "Certified adversarial robustness via randomized
+# smoothing" is fully contained in an unrelated WWW'20 title (sim 0.85). So a
+# Crossref candidate must also share authors with the citation:
+#   - title sim ≥ TITLE_SIMILARITY_THRESHOLD and at least one shared author, or
+#   - title sim ≥ CROSSREF_WEAK_TITLE_MIN_SIM and author overlap ≥
+#     CROSSREF_WEAK_TITLE_MIN_AUTHOR_OVERLAP (renamed camera-ready titles such
+#     as "Tree-ring watermarks…" → "Tree-Rings Watermarks…", sim 0.64 / 0.25);
+#   - with no authors on either side, title sim ≥ CROSSREF_TITLE_ONLY_MIN_SIM.
+CROSSREF_WEAK_TITLE_MIN_SIM = 0.60
+CROSSREF_WEAK_TITLE_MIN_AUTHOR_OVERLAP = 0.25
+CROSSREF_TITLE_ONLY_MIN_SIM = 0.85
+
 # Cap on author-list comparison so a long author list does not dominate scoring.
 MAX_AUTHORS_TO_COMPARE = 10
 
