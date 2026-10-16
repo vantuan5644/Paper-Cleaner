@@ -76,10 +76,22 @@ fi
 
 echo
 
+# Prompt for a path with readline editing, so Tab completes file names.
+# No -r on purpose: readline escapes spaces as "\ " when completing, and plain
+# read strips those escapes. A leading ~ is expanded since read won't do it.
+#   read_path VAR "prompt: "
+read_path() {
+  local __val
+  # shellcheck disable=SC2162
+  read -e -p "$2" __val
+  __val="${__val/#\~/$HOME}"
+  printf -v "$1" '%s' "$__val"
+}
+
 # ── 2. interactive: pick the paper source ───────────────────────────────────
 # Accepts either a LaTeX source directory (clean + refcheck) or a single .pdf
 # file (refcheck only — there is no LaTeX tree to clean).
-read -r -p "Path to paper source dir or .pdf [$DEFAULT_INPUT]: " INPUT
+read_path INPUT "Path to paper source dir or .pdf [$DEFAULT_INPUT]: "
 INPUT="${INPUT:-$DEFAULT_INPUT}"
 
 if [[ -d "$INPUT" ]]; then
@@ -147,7 +159,7 @@ else
   CANDIDATES=("${BIBS[@]}" "${PDFS[@]}")
 
   if (( ${#CANDIDATES[@]} == 0 )); then
-    read -r -p "    no .bib/.pdf found. Path to .bib / .pdf / arXiv URL: " REFINPUT
+    read_path REFINPUT "    no .bib/.pdf found. Path to .bib / .pdf / arXiv URL: "
   elif (( ${#CANDIDATES[@]} == 1 )); then
     REFINPUT="${CANDIDATES[0]}"
     echo "    auto-selected: $REFINPUT"
